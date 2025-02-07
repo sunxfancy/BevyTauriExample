@@ -3,6 +3,8 @@
 
 mod bevy;
 mod wgpu;
+mod tauri_plugin;
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
