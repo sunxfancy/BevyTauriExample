@@ -8,8 +8,8 @@ Rendering everything native in bevy and using Tauri for the window management an
 
 ## The Example
 
-There are two different examples in the same codebase. wgpu and bevy as the default one.
-If you want to run the wgpu example, you can use the following command after building the release version:
+There are two different examples in the same codebase: wgpu and bevy.
+If you want to run the wgpu example, you need to give additional flag as the following command after building the release version:
 
 ```bash
 cd src-tauri/ && src-tauri/target/release/btexample --use-wgpu
