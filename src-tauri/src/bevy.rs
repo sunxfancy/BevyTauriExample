@@ -1,28 +1,7 @@
 use bevy::animation::{animated_field, AnimationTarget, AnimationTargetId};
-use bevy::app::{plugin_group, Plugin};
-use bevy::app::{PluginsState, ScheduleRunnerPlugin};
-use bevy::ecs::entity::EntityHashMap;
-use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use bevy::render::renderer::*;
-use bevy::render::settings::{RenderCreation, WgpuSettings};
-use bevy::render::RenderPlugin;
-use bevy::tasks::tick_global_task_pools_on_main_thread;
-use bevy::window::{
-    RawHandleWrapper, RawHandleWrapperHolder, WindowResized, WindowResolution,
-    WindowScaleFactorChanged, WindowWrapper,
-};
-use std::cell::{RefCell, RefMut};
-use std::collections::HashMap;
 use std::f32::consts::PI;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
-use tauri::{async_runtime::block_on, Manager};
-use tauri::{EventLoopMessage, RunEvent, WebviewWindow, Wry};
-use wgpu::RequestAdapterOptions;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 
 use crate::tauri_plugin::{TauriPlugin, AVERAGE_FRAME_RATE};
 

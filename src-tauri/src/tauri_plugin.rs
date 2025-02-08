@@ -1,7 +1,6 @@
-use bevy::animation::{animated_field, AnimationTarget, AnimationTargetId};
-use bevy::app::{plugin_group, Plugin};
-use bevy::app::{PluginsState, ScheduleRunnerPlugin};
-use bevy::ecs::entity::EntityHashMap;
+use bevy::app::Plugin;
+use bevy::app::PluginsState;
+
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::render::renderer::*;
@@ -13,18 +12,14 @@ use bevy::window::{
     WindowScaleFactorChanged, WindowWrapper,
 };
 use std::cell::{RefCell, RefMut};
-use std::collections::HashMap;
-use std::f32::consts::PI;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use std::time::{Duration, Instant};
 use tauri::{async_runtime::block_on, Manager};
-use tauri::{EventLoopMessage, RunEvent, WebviewWindow, Wry};
+use tauri::{ RunEvent, WebviewWindow};
 use wgpu::RequestAdapterOptions;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-
 
 struct CustomRendererPlugin {
     webview_window: WebviewWindow,
@@ -86,7 +81,6 @@ impl TauriPlugin {
     where
         F: Fn() -> tauri::App + Send + Sync + 'static,
     {
-
         Self {
             setup: Box::new(setup),
         }
@@ -119,7 +113,7 @@ fn run_tauri_app(app: App) -> AppExit {
     let mut last_second = Instant::now();
 
     loop {
-        let frame_start = Instant::now(); 
+        let frame_start = Instant::now();
 
         let app_clone = app.clone();
         tauri_app.run_iteration(move |app_handle, event: RunEvent| {
@@ -149,7 +143,6 @@ fn run_tauri_app(app: App) -> AppExit {
 
     AppExit::Success
 }
-
 
 fn handle_tauri_events(app_handle: &tauri::AppHandle, event: RunEvent, mut app: RefMut<'_, App>) {
     if app.plugins_state() != PluginsState::Cleaned {
@@ -208,7 +201,7 @@ fn handle_window_event(event: tauri::WindowEvent, app: RefMut<'_, App>) {
             scale_factor,
             new_inner_size,
             ..
-        } => {}
+        } => handle_window_factor_change(scale_factor, new_inner_size, app),
         _ => (),
     }
 }
@@ -230,4 +223,34 @@ fn handle_window_resize(size: tauri::PhysicalSize<u32>, mut app: RefMut<'_, App>
         });
     }
 }
+
+fn handle_window_factor_change(
+    scale_factor: f64,
+    new_inner_size: tauri::PhysicalSize<u32>,
+    mut app: RefMut<'_, App>,
+) {
+    let mut event_writer_system_state: SystemState<(
+        EventWriter<WindowResized>,
+        EventWriter<WindowScaleFactorChanged>,
+        Query<(Entity, &mut Window)>,
+    )> = SystemState::new(app.world_mut());
+
+    let (mut window_resized, mut window_scale_factor_changed, mut window_query) =
+        event_writer_system_state.get_mut(app.world_mut());
+
+    for (entity, mut window) in window_query.iter_mut() {
+        window.resolution =
+            WindowResolution::new(new_inner_size.width as f32, new_inner_size.height as f32);
+        window_scale_factor_changed.send(WindowScaleFactorChanged {
+            window: entity,
+            scale_factor,
+        });
+        window_resized.send(WindowResized {
+            window: entity,
+            width: new_inner_size.width as f32,
+            height: new_inner_size.height as f32,
+        });
+    }
+}
+
 
