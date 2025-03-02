@@ -5,6 +5,9 @@ mod bevy;
 mod wgpu;
 mod tauri_plugin;
 
+pub fn generate_tauri_context() -> tauri::Context {
+    tauri::generate_context!()
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();

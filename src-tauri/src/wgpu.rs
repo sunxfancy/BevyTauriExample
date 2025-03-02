@@ -21,12 +21,11 @@ pub fn setup_wgpu() {
             })
             .invoke_handler(tauri::generate_handler![greet])
             .invoke_handler(tauri::generate_handler![get_average_frame_rate])
-            .build(tauri::generate_context!())
+            .build(crate::generate_tauri_context())
             .expect("error while building tauri application")
             .run(move |app_handle, event: RunEvent| {
                 wgpu_callback(app_handle, event);
             });
-    
 }
 
 pub fn setup_wgpu_handler(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
