@@ -152,8 +152,6 @@ pub fn wgpu_callback(app_handle: &tauri::AppHandle, event: RunEvent) {
             // TODO: Request redraw on macos (not exposed in tauri yet).
         }
         RunEvent::MainEventsCleared => {
-            println!("MainEventsCleared");
-
             let surface = app_handle.state::<wgpu::Surface>();
             let render_pipeline = app_handle.state::<wgpu::RenderPipeline>();
             let device = app_handle.state::<wgpu::Device>();
