@@ -55,6 +55,7 @@ fn trace_startup(stage: &str) {
 
 pub static AVERAGE_FRAME_RATE: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(not(target_os = "macos"))]
 fn run_tauri_app(app: App) -> AppExit {
     let app = Rc::new(RefCell::new(app));
     let mut tauri_app = app
@@ -99,6 +100,52 @@ fn run_tauri_app(app: App) -> AppExit {
         }
     }
 
+    AppExit::Success
+}
+
+// AppKit must keep running between frames so WKWebView can service its main
+// dispatch queue. Repeated run_iteration()/NSApplication.stop calls can starve
+// page loading on macOS even while Bevy continues rendering.
+#[cfg(target_os = "macos")]
+fn run_tauri_app(mut app: App) -> AppExit {
+    let tauri_app = app.world_mut().remove_non_send::<tauri::App>().unwrap();
+    let app = Rc::new(RefCell::new(app));
+    let frame_interval = Duration::from_secs_f64(1.0 / 60.0);
+    let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let wake_running = running.clone();
+    let handle = tauri_app.handle().clone();
+    // Wake the otherwise waiting native loop without sleeping on its thread.
+    std::thread::spawn(move || {
+        while wake_running.load(Ordering::Relaxed) {
+            std::thread::sleep(frame_interval);
+            if handle.run_on_main_thread(|| {}).is_err() {
+                break;
+            }
+        }
+    });
+    let mut last_frame = Instant::now();
+    let mut last_second = Instant::now();
+    let mut frame_count = 0;
+    trace_startup("entering continuous Tauri event loop");
+    tauri_app.run(move |handle, event| {
+        if matches!(event, RunEvent::Exit) {
+            running.store(false, Ordering::Relaxed);
+        }
+        if matches!(event, RunEvent::MainEventsCleared)
+            && app.borrow().plugins_state() == PluginsState::Cleaned
+            && last_frame.elapsed() >= frame_interval
+        {
+            last_frame = Instant::now();
+            app.borrow_mut().update();
+            frame_count += 1;
+            if last_second.elapsed() >= Duration::from_secs(1) {
+                AVERAGE_FRAME_RATE.store(frame_count, Ordering::Relaxed);
+                frame_count = 0;
+                last_second = Instant::now();
+            }
+        }
+        handle_tauri_events(handle, event, app.borrow_mut());
+    });
     AppExit::Success
 }
 
