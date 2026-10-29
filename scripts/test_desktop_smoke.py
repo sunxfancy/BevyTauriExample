@@ -1,6 +1,7 @@
 import unittest
 from PIL import Image, ImageDraw
-from desktop_smoke import Smoke
+from desktop_smoke import Smoke, macos_accessibility_trusted
+from unittest.mock import Mock, patch
 
 
 class RenderAssertionsTest(unittest.TestCase):
@@ -33,6 +34,19 @@ class RenderAssertionsTest(unittest.TestCase):
         image = self.frame(ui=False)
         ImageDraw.Draw(image).rectangle((240, 10, 300, 70), fill=(30, 200, 220))
         self.assertFalse(self.smoke.visible(image, self.state)[0])
+
+
+class MacAccessibilityTest(unittest.TestCase):
+    def test_native_application_services_permission_result_is_preserved(self):
+        for allowed in [True, False]:
+            library = Mock()
+            library.AXIsProcessTrusted.return_value = allowed
+            with patch('desktop_smoke.ctypes.CDLL', return_value=library) as load:
+                self.assertEqual(macos_accessibility_trusted(), allowed)
+                load.assert_called_once_with(
+                    '/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices'
+                )
+                library.AXIsProcessTrusted.assert_called_once_with()
 
 
 if __name__ == '__main__':

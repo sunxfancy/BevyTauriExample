@@ -30,6 +30,17 @@ def desktop_size():
     return tuple(gui.size())
 
 
+def macos_accessibility_trusted():
+    # AXIsProcessTrusted belongs to ApplicationServices, not Quartz.
+    services = ctypes.CDLL(
+        "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+    )
+    trusted = services.AXIsProcessTrusted
+    trusted.argtypes = []
+    trusted.restype = ctypes.c_bool
+    return bool(trusted())
+
+
 def preflight():
     global gui
     import pyautogui as gui
@@ -39,7 +50,7 @@ def preflight():
         raise RuntimeError(f"Interactive desktop must be at least 1024x768; got {size}")
     if sys.platform == "darwin":
         import Quartz
-        if not Quartz.AXIsProcessTrusted():
+        if not macos_accessibility_trusted():
             raise RuntimeError("macOS Accessibility permission is missing. Use a logged-in GUI runner and grant it to the runner/Python process.")
         if hasattr(Quartz, "CGPreflightScreenCaptureAccess") and not Quartz.CGPreflightScreenCaptureAccess():
             raise RuntimeError("macOS Screen Recording permission is missing. Grant it to the runner/Python process before running CI.")
