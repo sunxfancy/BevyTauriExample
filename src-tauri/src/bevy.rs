@@ -1,4 +1,4 @@
-use bevy::animation::{animated_field, AnimationTarget, AnimationTargetId};
+use bevy::animation::{animated_field, AnimatedBy, AnimationTargetId};
 use bevy::prelude::*;
 use std::f32::consts::PI;
 use std::sync::atomic::Ordering;
@@ -15,48 +15,40 @@ pub fn get_average_frame_rate() -> usize {
     AVERAGE_FRAME_RATE.load(Ordering::Relaxed)
 }
 
-
 // This function is called from the main thread to setup the Bevy app
 pub fn setup_bevy() {
     // Configure Bevy to use the existing surface
     let mut app: App = App::new();
     app.insert_resource(ClearColor(Color::srgb_u8(0, 0, 0)));
-    app.add_plugins((
-        bevy::app::PanicHandlerPlugin::default(),
-        bevy::log::LogPlugin::default(),
-        bevy::core::TaskPoolPlugin::default(),
-        bevy::core::TypeRegistrationPlugin::default(),
-        bevy::core::FrameCountPlugin::default(),
-        bevy::time::TimePlugin::default(),
-        bevy::transform::TransformPlugin::default(),
-        bevy::hierarchy::HierarchyPlugin::default(),
-        bevy::diagnostic::DiagnosticsPlugin::default(),
-        bevy::input::InputPlugin::default(),
-        
-    ));
-    app.add_plugins(WindowPlugin {
-        primary_window: Some(Window::default()),
-        ..default()
-    });
-    app.add_plugins((
-        bevy::a11y::AccessibilityPlugin::default(),
-        bevy::asset::AssetPlugin::default(),
-        bevy::scene::ScenePlugin::default(),
-    ));
-
     // create tauri app
     app.add_plugins(TauriPlugin::new(|| {
-        tauri::Builder::default()
-            .invoke_handler(tauri::generate_handler![greet])
-            .invoke_handler(tauri::generate_handler![get_average_frame_rate])
+        let builder = tauri::Builder::default();
+        #[cfg(not(feature = "ci-smoke"))]
+        let builder =
+            builder.invoke_handler(tauri::generate_handler![greet, get_average_frame_rate]);
+        #[cfg(feature = "ci-smoke")]
+        let builder = builder
+            .invoke_handler(tauri::generate_handler![
+                greet,
+                get_average_frame_rate,
+                crate::ci_smoke::report
+            ])
+            .setup(crate::ci_smoke::setup)
+            .on_page_load(|webview, payload| {
+                if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                    if let Err(error) = webview.eval(include_str!("ci_smoke.js")) {
+                        eprintln!("CI probe injection failed: {error}");
+                    }
+                }
+            });
+        builder
             .build(crate::generate_tauri_context())
             .expect("error while building tauri application")
     }));
 
-
     // App setup
     app.add_systems(Startup, setup)
-        .insert_resource(AmbientLight {
+        .insert_resource(GlobalAmbientLight {
             color: Color::WHITE,
             brightness: 150.0,
             ..default()
@@ -199,20 +191,17 @@ fn setup(
         .id();
     commands
         .entity(planet_entity)
-        .insert(AnimationTarget {
-            id: planet_animation_target_id,
-            player: planet_entity,
-        })
+        .insert((planet_animation_target_id, AnimatedBy(planet_entity)))
         .with_children(|p| {
             // This entity is just used for animation, but doesn't display anything
             p.spawn((
                 Transform::default(),
                 Visibility::default(),
                 orbit_controller,
-                AnimationTarget {
-                    id: orbit_controller_animation_target_id,
-                    player: planet_entity,
-                },
+                (
+                    orbit_controller_animation_target_id,
+                    AnimatedBy(planet_entity),
+                ),
             ))
             .with_children(|p| {
                 // The satellite, placed at a distance of the planet
@@ -220,10 +209,7 @@ fn setup(
                     Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
                     MeshMaterial3d(materials.add(Color::srgb(0.3, 0.9, 0.3))),
                     Transform::from_xyz(1.5, 0.0, 0.0),
-                    AnimationTarget {
-                        id: satellite_animation_target_id,
-                        player: planet_entity,
-                    },
+                    (satellite_animation_target_id, AnimatedBy(planet_entity)),
                     satellite,
                 ));
             });

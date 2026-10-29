@@ -1,0 +1,101 @@
+name: Desktop rendering and interaction
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: ${{ matrix.platform }} native render and input
+    # Repository variables may select GUI/GPU-equipped runners when hosted
+    # runners lack a usable desktop, Metal device, or macOS TCC permissions.
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            runner: ${{ vars.LINUX_RENDER_RUNNER || '["ubuntu-24.04"]' }}
+            backend: vulkan
+            fallback: '1'
+            executable: btexample
+          - platform: Windows
+            runner: ${{ vars.WINDOWS_RENDER_RUNNER || '["windows-2022"]' }}
+            backend: dx12
+            fallback: '1'
+            executable: btexample.exe
+          - platform: macOS
+            runner: ${{ vars.MACOS_RENDER_RUNNER || '["macos-15"]' }}
+            backend: metal
+            fallback: '0'
+            executable: btexample
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      WGPU_BACKEND: ${{ matrix.backend }}
+      WGPU_FORCE_FALLBACK_ADAPTER: ${{ matrix.fallback }}
+      RUST_BACKTRACE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: desktop-smoke
+      - name: Install Linux GUI and software Vulkan dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libasound2-dev libudev-dev libxdo-dev libxkbcommon-dev libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb openbox x11-utils python3-tk
+      - name: Install frontend and desktop test dependencies
+        run: |
+          npm install --global yarn@1.22.22
+          yarn install --frozen-lockfile
+          python -m pip install -r scripts/requirements-render.txt
+      - name: Test visual assertions
+        run: python -m unittest discover -s scripts -p "test_*.py"
+      - name: Build packaged frontend
+        run: yarn build
+      - name: Unit tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build desktop smoke executable
+        # Embedded assets: the test must not accidentally pass against a Vite tab.
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --features ci-smoke,custom-protocol
+      - name: Test Linux desktop composition and native input
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p artifacts/desktop-smoke
+          xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' dbus-run-session -- bash -c '
+            openbox > artifacts/desktop-smoke/window-manager.log 2>&1 &
+            python scripts/desktop_smoke.py --app src-tauri/target/debug/btexample --output artifacts/desktop-smoke
+          '
+      - name: Test Windows or macOS desktop composition and native input
+        if: runner.os != 'Linux'
+        run: python scripts/desktop_smoke.py --app src-tauri/target/debug/${{ matrix.executable }} --output artifacts/desktop-smoke
+      - name: Upload screenshots, telemetry and application log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-smoke-${{ matrix.platform }}
+          path: artifacts/desktop-smoke/
+          if-no-files-found: warn
+          retention-days: 14

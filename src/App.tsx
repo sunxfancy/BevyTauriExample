@@ -78,7 +78,7 @@ function App() {
         />
         <button type="submit">Greet</button>
       </form>
-      <p>{greetMsg}</p>
+      <p id="greet-result">{greetMsg}</p>
     </main>
   );
 }

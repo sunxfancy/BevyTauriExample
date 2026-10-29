@@ -14,63 +14,11 @@ use bevy::window::{
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use std::time::{Duration, Instant};
+use tauri::RunEvent;
 use tauri::{async_runtime::block_on, Manager};
-use tauri::{ RunEvent, WebviewWindow};
-use wgpu::RequestAdapterOptions;
-
-struct CustomRendererPlugin {
-    webview_window: WebviewWindow,
-}
-
-impl Plugin for CustomRendererPlugin {
-    fn build(&self, app: &mut App) {
-        let instance = wgpu::Instance::default();
-        let surface = instance.create_surface(&self.webview_window).unwrap();
-
-        let (device, queue, adapter_info, adapter) = block_on(initialize_renderer(
-            &instance,
-            &WgpuSettings::default(),
-            &RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            },
-        ));
-
-        app.add_plugins(RenderPlugin {
-            render_creation: RenderCreation::Manual(
-                device,
-                queue,
-                adapter_info,
-                adapter,
-                RenderInstance(Arc::new(WgpuWrapper::new(instance))),
-            ),
-            ..default()
-        });
-    }
-}
-
-fn create_window_handle(
-    mut commands: Commands,
-    query: Query<(Entity, Option<&'static RawHandleWrapperHolder>)>,
-    tauri_app: NonSend<tauri::AppHandle>,
-) {
-    let tauri_window = tauri_app.get_webview_window("main").unwrap();
-    let window_wrapper = WindowWrapper::new(tauri_window);
-
-    for (entity, handle_holder) in query.iter() {
-        if let Ok(handle_wrapper) = RawHandleWrapper::new(&window_wrapper) {
-            commands.entity(entity).insert(handle_wrapper.clone());
-
-            if let Some(handle_holder) = handle_holder {
-                *handle_holder.0.lock().unwrap() = Some(handle_wrapper);
-            }
-        }
-    }
-}
 
 pub struct TauriPlugin {
     setup: Box<dyn Fn() -> tauri::App + Send + Sync>,
@@ -91,9 +39,8 @@ impl Plugin for TauriPlugin {
     fn build(&self, app: &mut App) {
         let tauri_app = (self.setup)();
 
-        app.add_systems(Startup, create_window_handle);
-        app.insert_non_send_resource(tauri_app.handle().clone());
-        app.insert_non_send_resource(tauri_app);
+        app.insert_non_send(tauri_app.handle().clone());
+        app.insert_non_send(tauri_app);
         app.set_runner(run_tauri_app);
     }
 }
@@ -105,7 +52,7 @@ fn run_tauri_app(app: App) -> AppExit {
     let mut tauri_app = app
         .borrow_mut()
         .world_mut()
-        .remove_non_send_resource::<tauri::App>()
+        .remove_non_send::<tauri::App>()
         .unwrap();
 
     let target_frame_duration = Duration::from_secs_f64(1.0 / 60.0); // 60Hz
@@ -126,6 +73,8 @@ fn run_tauri_app(app: App) -> AppExit {
             break;
         }
 
+        #[cfg(target_os = "linux")]
+        crate::linux_overlay::request_frame(&mut app.borrow_mut());
         app.borrow_mut().update();
         let frame_duration = frame_start.elapsed();
         if frame_duration < target_frame_duration {
@@ -145,16 +94,14 @@ fn run_tauri_app(app: App) -> AppExit {
 }
 
 fn handle_tauri_events(app_handle: &tauri::AppHandle, event: RunEvent, mut app: RefMut<'_, App>) {
-    if app.plugins_state() != PluginsState::Cleaned {
-        if app.plugins_state() != PluginsState::Ready {
-            tick_global_task_pools_on_main_thread();
-        }
-    }
-
     match event {
         tauri::RunEvent::Ready => handle_ready_event(app_handle, app),
-        tauri::RunEvent::ExitRequested { api, .. } => {}
-        tauri::RunEvent::WindowEvent { label, event, .. } => handle_window_event(event, app),
+        tauri::RunEvent::ExitRequested { .. } => {}
+        tauri::RunEvent::WindowEvent { event, .. }
+            if app.plugins_state() == PluginsState::Cleaned =>
+        {
+            handle_window_event(event, app)
+        }
         tauri::RunEvent::MainEventsCleared => {}
         _ => (),
     }
@@ -163,26 +110,46 @@ fn handle_tauri_events(app_handle: &tauri::AppHandle, event: RunEvent, mut app: 
 fn handle_ready_event(app_handle: &tauri::AppHandle, mut app: RefMut<'_, App>) {
     if app.plugins_state() != PluginsState::Cleaned {
         let window = app_handle.get_webview_window("main").unwrap();
-        app.add_plugins(CustomRendererPlugin {
-            webview_window: window,
-        });
-
-        app.add_plugins((
-            bevy::render::texture::ImagePlugin::default(),
-            bevy::render::pipelined_rendering::PipelinedRenderingPlugin::default(),
-            bevy::core_pipeline::CorePipelinePlugin::default(),
-            bevy::sprite::SpritePlugin::default(),
-            bevy::text::TextPlugin::default(),
-            bevy::ui::UiPlugin::default(),
-            bevy::pbr::PbrPlugin::default(),
-            bevy::gltf::GltfPlugin::default(),
-            bevy::audio::AudioPlugin::default(),
-            bevy::gilrs::GilrsPlugin::default(),
-            bevy::animation::AnimationPlugin::default(),
-            bevy::gizmos::GizmoPlugin::default(),
-            bevy::state::app::StatesPlugin::default(),
-            bevy::picking::DefaultPickingPlugins::default(),
+        // Tauri owns the native window and event loop. Initialize Bevy's renderer
+        // against that window before adding the standard rendering plugins.
+        let wrapper = WindowWrapper::new(window.clone());
+        let raw_handle = RawHandleWrapper::new(&wrapper).expect("invalid Tauri window handle");
+        let holder = RawHandleWrapperHolder(Arc::new(Mutex::new(Some(raw_handle.clone()))));
+        let settings = WgpuSettings::default();
+        let resources = block_on(initialize_renderer(
+            settings.backends.expect("no rendering backend enabled"),
+            Some(holder.clone()),
+            &settings,
         ));
+        let size = window.inner_size().expect("cannot read window size");
+        let scale_factor = window
+            .scale_factor()
+            .expect("cannot read window scale factor");
+        let mut resolution = WindowResolution::new(size.width, size.height);
+        resolution.set_scale_factor(scale_factor as f32);
+
+        app.add_plugins(
+            DefaultPlugins
+                .build()
+                .disable::<bevy::winit::WinitPlugin>()
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        resolution,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    render_creation: RenderCreation::Manual(Box::new(resources)),
+                    ..default()
+                }),
+        );
+        let world = app.world_mut();
+        let mut windows = world.query_filtered::<Entity, With<bevy::window::PrimaryWindow>>();
+        let entity = windows.single(world).expect("missing primary window");
+        world.entity_mut(entity).insert((raw_handle, holder));
+        #[cfg(target_os = "linux")]
+        crate::linux_overlay::install(&mut app);
         // wait for bevy to be ready
 
         while app.plugins_state() != PluginsState::Ready {
@@ -208,18 +175,22 @@ fn handle_window_event(event: tauri::WindowEvent, app: RefMut<'_, App>) {
 
 fn handle_window_resize(size: tauri::PhysicalSize<u32>, mut app: RefMut<'_, App>) {
     let mut event_writer_system_state: SystemState<(
-        EventWriter<WindowResized>,
+        MessageWriter<WindowResized>,
         Query<(Entity, &mut Window)>,
     )> = SystemState::new(app.world_mut());
 
-    let (mut window_resized, mut window_query) = event_writer_system_state.get_mut(app.world_mut());
+    let (mut window_resized, mut window_query) = event_writer_system_state
+        .get_mut(app.world_mut())
+        .expect("window messages must be initialized");
 
     for (entity, mut window) in window_query.iter_mut() {
-        window.resolution = WindowResolution::new(size.width as f32, size.height as f32);
-        window_resized.send(WindowResized {
+        window
+            .resolution
+            .set_physical_resolution(size.width, size.height);
+        window_resized.write(WindowResized {
             window: entity,
-            width: size.width as f32,
-            height: size.height as f32,
+            width: window.width(),
+            height: window.height(),
         });
     }
 }
@@ -230,27 +201,29 @@ fn handle_window_factor_change(
     mut app: RefMut<'_, App>,
 ) {
     let mut event_writer_system_state: SystemState<(
-        EventWriter<WindowResized>,
-        EventWriter<WindowScaleFactorChanged>,
+        MessageWriter<WindowResized>,
+        MessageWriter<WindowScaleFactorChanged>,
         Query<(Entity, &mut Window)>,
     )> = SystemState::new(app.world_mut());
 
     let (mut window_resized, mut window_scale_factor_changed, mut window_query) =
-        event_writer_system_state.get_mut(app.world_mut());
+        event_writer_system_state
+            .get_mut(app.world_mut())
+            .expect("window messages must be initialized");
 
     for (entity, mut window) in window_query.iter_mut() {
-        window.resolution =
-            WindowResolution::new(new_inner_size.width as f32, new_inner_size.height as f32);
-        window_scale_factor_changed.send(WindowScaleFactorChanged {
+        window.resolution.set_scale_factor(scale_factor as f32);
+        window
+            .resolution
+            .set_physical_resolution(new_inner_size.width, new_inner_size.height);
+        window_scale_factor_changed.write(WindowScaleFactorChanged {
             window: entity,
             scale_factor,
         });
-        window_resized.send(WindowResized {
+        window_resized.write(WindowResized {
             window: entity,
-            width: new_inner_size.width as f32,
-            height: new_inner_size.height as f32,
+            width: window.width(),
+            height: window.height(),
         });
     }
 }
-
-

@@ -103,7 +103,8 @@ button {
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
-    background-color: #2f2f2f;
+    /* Keep the webview transparent so the Bevy scene remains visible. */
+    background-color: transparent;
   }
 
   a:hover {

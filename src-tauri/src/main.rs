@@ -2,6 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bevy;
+#[cfg(feature = "ci-smoke")]
+mod ci_smoke;
+#[cfg(target_os = "linux")]
+mod linux_overlay;
 mod wgpu;
 mod tauri_plugin;
 
