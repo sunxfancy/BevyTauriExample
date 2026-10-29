@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Desktop smoke test evidence
+artifacts/
+__pycache__/

@@ -1,0 +1,4 @@
+# OS screenshots and real pointer/keyboard events; no DOM input emulation.
+PyAutoGUI==0.9.54
+Pillow==11.3.0
+numpy==2.2.6

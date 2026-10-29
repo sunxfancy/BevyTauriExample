@@ -73,12 +73,15 @@ function App() {
       >
         <input
           id="greet-input"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           onChange={(e) => setName(e.currentTarget.value)}
           placeholder="Enter a name..."
         />
         <button type="submit">Greet</button>
       </form>
-      <p>{greetMsg}</p>
+      <p id="greet-result">{greetMsg}</p>
     </main>
   );
 }
