@@ -132,7 +132,7 @@ fn run_tauri_app(mut app: App) -> AppExit {
             running.store(false, Ordering::Relaxed);
         }
         if matches!(event, RunEvent::MainEventsCleared)
-            && app.borrow().plugins_state() == PluginsState::Cleaned
+            && app.borrow_mut().plugins_state() == PluginsState::Cleaned
             && last_frame.elapsed() >= frame_interval
         {
             last_frame = Instant::now();
