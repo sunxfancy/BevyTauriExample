@@ -144,7 +144,8 @@ class Smoke:
         panel = self.roi(image, state["panel"], state)
         r, g, b = panel[..., 0], panel[..., 1], panel[..., 2]
         green = (g > 65) & (g > r*1.2) & (g > b*1.2)
-        return int(cyan.sum()) > 100 and int(green.sum()) > 80, green
+        self.last_pixels = dict(cyan=int(cyan.sum()), green=int(green.sum()))
+        return self.last_pixels["cyan"] > 100 and self.last_pixels["green"] > 80, green
 
     def render_check(self, name):
         deadline = time.monotonic() + 60
@@ -166,7 +167,7 @@ class Smoke:
                     image.save(self.output / f"{name}-animated.png")
                     return state
             time.sleep(.35)
-        raise AssertionError(f"{name}: React logo and animated green cube were not both visible through the panel. See screenshots; verify desktop/GPU availability.")
+        raise AssertionError(f"{name}: React logo and animated green cube were not both visible through the panel. Pixel counts: {self.last_pixels}. See screenshots; verify desktop/GPU availability.")
 
     def click(self, state, target):
         rect = state[target]

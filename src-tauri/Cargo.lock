@@ -2269,6 +2269,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "cairo-rs",
+ "objc2 0.6.5",
  "serde",
  "serde_json",
  "tauri",

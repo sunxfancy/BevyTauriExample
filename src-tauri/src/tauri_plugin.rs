@@ -169,6 +169,17 @@ fn handle_ready_event(app_handle: &tauri::AppHandle, mut app: RefMut<'_, App>) {
         let window = app_handle.get_webview_window("main").unwrap();
         // Tauri owns the native window and event loop. Initialize Bevy's renderer
         // against that window before adding the standard rendering plugins.
+        // wgpu 30 appends its CAMetalLayer to the content view. Keep the
+        // transparent WKWebView's layer above it regardless of insertion order.
+        #[cfg(target_os = "macos")]
+        window.with_webview(|webview| unsafe {
+            use objc2::{msg_send, runtime::AnyObject};
+            let view: &AnyObject = &*webview.inner().cast();
+            let _: () = msg_send![view, setWantsLayer: true];
+            let layer: *mut AnyObject = msg_send![view, layer];
+            assert!(!layer.is_null(), "WKWebView must have a backing layer");
+            let _: () = msg_send![layer, setZPosition: 1.0_f64];
+        }).expect("cannot set macOS webview layer order");
         let wrapper = WindowWrapper::new(window.clone());
         let raw_handle = RawHandleWrapper::new(&wrapper).expect("invalid Tauri window handle");
         let holder = RawHandleWrapperHolder(Arc::new(Mutex::new(Some(raw_handle.clone()))));

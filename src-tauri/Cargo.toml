@@ -28,3 +28,6 @@ bevy = "0.20.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "=2.0.1"
 cairo-rs = "0.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
