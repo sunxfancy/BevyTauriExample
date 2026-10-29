@@ -1,6 +1,6 @@
 import unittest
 from PIL import Image, ImageDraw
-from desktop_smoke import Smoke, macos_accessibility_trusted, fitting_resize
+from desktop_smoke import Smoke, macos_accessibility_trusted, fitting_resize, resize_matches
 from unittest.mock import Mock, patch
 
 
@@ -48,6 +48,19 @@ class ResizeBoundsTest(unittest.TestCase):
         state = dict(width=800, height=600, native=dict(x=48, y=71, width=800, height=600, scale=1))
         with patch('desktop_smoke.sys.platform', 'linux'):
             self.assertEqual(fitting_resize(state, (1280, 900)), (960, 700))
+
+
+class ResizeTelemetryTest(unittest.TestCase):
+    def test_native_and_dom_must_both_resize_with_the_same_inset(self):
+        for scale in [1, 2]:
+            before = dict(width=800, height=572,
+                          native=dict(width=800*scale, height=600*scale, scale=scale))
+            resized = dict(width=936, height=620,
+                           native=dict(width=936*scale, height=648*scale, scale=scale))
+            self.assertTrue(resize_matches(resized, before, 936, 648))
+            self.assertFalse(resize_matches(before, before, 936, 648))
+            self.assertFalse(resize_matches(dict(resized, height=572), before, 936, 648))
+            self.assertFalse(resize_matches(dict(resized, native=before['native']), before, 936, 648))
 
 
 class MacAccessibilityTest(unittest.TestCase):

@@ -76,8 +76,10 @@ The original project at `a60fb86` (Bevy 0.15.1 and its original lockfile) also
 fails to show the React overlay in the same Linux environment. It relies on
 platform-native transparent WebView layering; the README screenshot shows
 Windows. This Linux-specific path addresses that pre-existing limitation.
-Windows and macOS retain the original native layering path and have not been
-runtime-tested here.
+Windows and macOS use native WebView layering. On macOS, Tauri keeps the AppKit
+event loop running continuously and drives Bevy at up to 60 Hz, allowing WebKit
+to process page loads and input between frames. The transparent WebView layer
+is explicitly placed above the Metal surface added by wgpu.
 
 ## Cross-platform desktop CI
 

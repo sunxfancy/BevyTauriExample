@@ -44,6 +44,20 @@ def fitting_resize(state, desktop):
     return width, height
 
 
+def resize_matches(state, before, width, height):
+    # set_size takes logical native dimensions. WKWebView may reserve a title
+    # bar inset inside that area; require both the native target and the matching
+    # DOM size change, without assuming that the two coordinate spaces coincide.
+    native, previous = state['native'], before['native']
+    for axis, target in [('width', width), ('height', height)]:
+        actual = native[axis] / native['scale']
+        old = previous[axis] / previous['scale']
+        expected_dom = before[axis] + target - old
+        if abs(actual - target) > 2 or abs(state[axis] - expected_dom) > 2:
+            return False
+    return True
+
+
 def macos_accessibility_trusted():
     # AXIsProcessTrusted belongs to ApplicationServices, not Quartz.
     services = ctypes.CDLL(
@@ -211,9 +225,10 @@ class Smoke:
         self.greet("ci-enter", enter=True)
         self.completed.append("Enter submit + IPC")
         self.sequence += 1
-        width, height = fitting_resize(self.state(), desktop_size())
+        before_resize = self.state()
+        width, height = fitting_resize(before_resize, desktop_size())
         (self.output / "control.json").write_text(json.dumps({"sequence": self.sequence, "width": width, "height": height}), encoding="utf-8")
-        self.wait(lambda s: abs(s['width']-width) <= 2 and abs(s['height']-height) <= 2, "native window resize")
+        self.wait(lambda s: resize_matches(s, before_resize, width, height), "native window and DOM resize")
         self.render_check("resized")
         self.greet("ci-resized")
         self.completed.append("resize + rendering + input")
