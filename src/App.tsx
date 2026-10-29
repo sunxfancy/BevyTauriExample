@@ -73,6 +73,9 @@ function App() {
       >
         <input
           id="greet-input"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           onChange={(e) => setName(e.currentTarget.value)}
           placeholder="Enter a name..."
         />
