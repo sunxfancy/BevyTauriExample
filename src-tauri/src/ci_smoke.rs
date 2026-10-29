@@ -14,6 +14,7 @@ fn output_dir() -> Result<PathBuf, String> {
 }
 
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("Desktop startup: CI setup entered");
     if std::env::var_os("BTEXAMPLE_SMOKE_DIR").is_some() {
         let window = app
             .get_webview_window("main")
@@ -21,6 +22,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         window.set_position(tauri::LogicalPosition::new(40., 40.))?;
         window.set_focus()?;
     }
+    eprintln!("Desktop startup: CI setup complete");
     Ok(())
 }
 

@@ -35,6 +35,11 @@ pub fn setup_bevy() {
             ])
             .setup(crate::ci_smoke::setup)
             .on_page_load(|webview, payload| {
+                eprintln!(
+                    "Desktop startup: page {:?} {}",
+                    payload.event(),
+                    payload.url()
+                );
                 if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                     if let Err(error) = webview.eval(include_str!("ci_smoke.js")) {
                         eprintln!("CI probe injection failed: {error}");

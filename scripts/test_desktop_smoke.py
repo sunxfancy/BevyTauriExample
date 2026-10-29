@@ -1,6 +1,6 @@
 import unittest
 from PIL import Image, ImageDraw
-from desktop_smoke import Smoke, macos_accessibility_trusted
+from desktop_smoke import Smoke, macos_accessibility_trusted, fitting_resize
 from unittest.mock import Mock, patch
 
 
@@ -34,6 +34,20 @@ class RenderAssertionsTest(unittest.TestCase):
         image = self.frame(ui=False)
         ImageDraw.Draw(image).rectangle((240, 10, 300, 70), fill=(30, 200, 220))
         self.assertFalse(self.smoke.visible(image, self.state)[0])
+
+
+class ResizeBoundsTest(unittest.TestCase):
+    def test_windows_titlebar_fits_in_1024_by_768_desktop(self):
+        state = dict(width=800, height=600, native=dict(x=48, y=71, width=800, height=600, scale=1))
+        with patch('desktop_smoke.sys.platform', 'win32'):
+            width, height = fitting_resize(state, (1024, 768))
+        self.assertEqual((width, height), (928, 649))
+        self.assertLess(71 + height, 768)
+
+    def test_larger_desktop_keeps_requested_size(self):
+        state = dict(width=800, height=600, native=dict(x=48, y=71, width=800, height=600, scale=1))
+        with patch('desktop_smoke.sys.platform', 'linux'):
+            self.assertEqual(fitting_resize(state, (1280, 900)), (960, 700))
 
 
 class MacAccessibilityTest(unittest.TestCase):

@@ -30,6 +30,20 @@ def desktop_size():
     return tuple(gui.size())
 
 
+def fitting_resize(state, desktop):
+    # Keep decorations/taskbar space outside the captured content area.
+    native = state['native']
+    scale = native['scale'] if sys.platform == 'darwin' else 1
+    x, y = native['x'] / scale, native['y'] / scale
+    css_x = state['width'] / (native['width'] / scale)
+    css_y = state['height'] / (native['height'] / scale)
+    width = min(960, int((desktop[0] - x - 48) * css_x))
+    height = min(700, int((desktop[1] - y - 48) * css_y))
+    if width < 640 or height < 480:
+        raise RuntimeError(f'Insufficient visible desktop for resize test: {width}x{height}')
+    return width, height
+
+
 def macos_accessibility_trusted():
     # AXIsProcessTrusted belongs to ApplicationServices, not Quartz.
     services = ctypes.CDLL(
@@ -196,8 +210,9 @@ class Smoke:
         self.greet("ci-enter", enter=True)
         self.completed.append("Enter submit + IPC")
         self.sequence += 1
-        (self.output / "control.json").write_text(json.dumps({"sequence": self.sequence, "width": 960, "height": 700}), encoding="utf-8")
-        self.wait(lambda s: abs(s['width']-960) <= 2 and abs(s['height']-700) <= 2, "native window resize")
+        width, height = fitting_resize(self.state(), desktop_size())
+        (self.output / "control.json").write_text(json.dumps({"sequence": self.sequence, "width": width, "height": height}), encoding="utf-8")
+        self.wait(lambda s: abs(s['width']-width) <= 2 and abs(s['height']-height) <= 2, "native window resize")
         self.render_check("resized")
         self.greet("ci-resized")
         self.completed.append("resize + rendering + input")
@@ -247,6 +262,14 @@ def main():
             pass
         if smoke:
             smoke.result('failed', str(error))
+            if sys.platform == 'darwin' and smoke.process.poll() is None:
+                try:
+                    subprocess.run(['/usr/bin/sample', str(smoke.process.pid), '2', '1',
+                                    '-file', str(output / 'process-sample.txt')],
+                                   timeout=15, check=False, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
         raise
     finally:
         if smoke:

@@ -12,7 +12,7 @@ Checks:
 - The cube's position changes across screenshots (a frozen scene fails).
 - Native typing, mouse submission, and Enter submission reach the Rust `greet`
   command and produce a visible response.
-- Resizing to 960x700 keeps the scene animated and the UI interactive.
+- Resizing towards 960x700 (clamped to fit the desktop including decorations) keeps the scene animated and the UI interactive.
 - JavaScript errors, process exits, missing frames, and timeouts fail the test.
 
 This is a visual smoke test, not pixel-perfect reference-image comparison.

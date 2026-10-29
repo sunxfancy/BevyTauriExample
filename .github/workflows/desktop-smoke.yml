@@ -60,6 +60,7 @@ jobs:
         with:
           workspaces: src-tauri
           key: desktop-smoke
+          cache-on-failure: true
       - name: Install Linux GUI and software Vulkan dependencies
         if: runner.os == 'Linux'
         run: |
@@ -91,6 +92,19 @@ jobs:
       - name: Test Windows or macOS desktop composition and native input
         if: runner.os != 'Linux'
         run: python scripts/desktop_smoke.py --app src-tauri/target/debug/${{ matrix.executable }} --output artifacts/desktop-smoke
+      - name: Print desktop failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for name in ("app.log", "failure.txt", "result.json", "process-sample.txt"):
+              path = Path("artifacts/desktop-smoke") / name
+              if path.exists():
+                  print(f"--- {name} ---")
+                  lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                  print("\n".join(lines[:180] if name == "process-sample.txt" else lines[-180:]))
+          PY
       - name: Upload screenshots, telemetry and application log
         if: always()
         uses: actions/upload-artifact@v4

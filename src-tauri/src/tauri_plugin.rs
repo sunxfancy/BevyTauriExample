@@ -37,11 +37,19 @@ impl TauriPlugin {
 
 impl Plugin for TauriPlugin {
     fn build(&self, app: &mut App) {
+        trace_startup("building Tauri application");
         let tauri_app = (self.setup)();
+        trace_startup("Tauri application built");
 
         app.insert_non_send(tauri_app.handle().clone());
         app.insert_non_send(tauri_app);
         app.set_runner(run_tauri_app);
+    }
+}
+
+fn trace_startup(stage: &str) {
+    if cfg!(feature = "ci-smoke") {
+        eprintln!("Desktop startup: {stage}");
     }
 }
 
@@ -59,6 +67,7 @@ fn run_tauri_app(app: App) -> AppExit {
     let mut frame_count = 0;
     let mut last_second = Instant::now();
 
+    trace_startup("entering Tauri event loop");
     loop {
         let frame_start = Instant::now();
 
@@ -109,6 +118,7 @@ fn handle_tauri_events(app_handle: &tauri::AppHandle, event: RunEvent, mut app: 
 
 fn handle_ready_event(app_handle: &tauri::AppHandle, mut app: RefMut<'_, App>) {
     if app.plugins_state() != PluginsState::Cleaned {
+        trace_startup("Tauri Ready received");
         let window = app_handle.get_webview_window("main").unwrap();
         // Tauri owns the native window and event loop. Initialize Bevy's renderer
         // against that window before adding the standard rendering plugins.
@@ -116,11 +126,13 @@ fn handle_ready_event(app_handle: &tauri::AppHandle, mut app: RefMut<'_, App>) {
         let raw_handle = RawHandleWrapper::new(&wrapper).expect("invalid Tauri window handle");
         let holder = RawHandleWrapperHolder(Arc::new(Mutex::new(Some(raw_handle.clone()))));
         let settings = WgpuSettings::default();
+        trace_startup("initializing GPU renderer");
         let resources = block_on(initialize_renderer(
             settings.backends.expect("no rendering backend enabled"),
             Some(holder.clone()),
             &settings,
         ));
+        trace_startup("GPU renderer initialized");
         let size = window.inner_size().expect("cannot read window size");
         let scale_factor = window
             .scale_factor()
@@ -144,6 +156,7 @@ fn handle_ready_event(app_handle: &tauri::AppHandle, mut app: RefMut<'_, App>) {
                     ..default()
                 }),
         );
+        trace_startup("Bevy plugins built");
         let world = app.world_mut();
         let mut windows = world.query_filtered::<Entity, With<bevy::window::PrimaryWindow>>();
         let entity = windows.single(world).expect("missing primary window");
@@ -156,8 +169,10 @@ fn handle_ready_event(app_handle: &tauri::AppHandle, mut app: RefMut<'_, App>) {
             tick_global_task_pools_on_main_thread();
         }
 
+        trace_startup("Bevy plugins ready");
         app.finish();
         app.cleanup();
+        trace_startup("Bevy initialization complete");
     }
 }
 
